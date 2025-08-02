@@ -1,64 +1,49 @@
-module uarttx #(
-    parameter clk_freq = 1000000, // Clock Frequency = 1MHz
-    parameter baud_rate = 9600, // Baud Rate = 9600
-    parameter IDLE = 2'b00,
-    parameter START = 2'b01,
-    parameter TRANSFER = 2'b10,
-    parameter DONE = 2'b11
-    ) (
-    input clk, rst,
-    input newd,
+module uart_tx (
+    input clk,
+    input rst,
+    input tx_start,
     input [7:0] tx_data,
+    input tick,
     output reg tx,
-    output reg donetx
-    );
-    localparam clk_count = (clk_freq/baud_rate); // Ratio between clock frequency and baud rate
-    
-    integer count = 0; // Used for UART Clock Generation
+    output reg tx_busy
+);
 
-    reg uclk = 0; // UART Clock
-    reg [1:0] state;
-    reg [3:0] counter;
+    reg [3:0] state;
+    reg [3:0] bit_index;
+    reg [9:0] shift_reg;
 
-    // UART Clock Generation
-    always @(posedge clk) begin
-        if(count < clk_count/2)
-            count <= count + 1;
-        else begin
-            count <= 0;
-            uclk <= ~uclk;
-        end
-    end
-
-    always @(posedge uclk) begin
-        if(rst)
-            state <= IDLE;
-        else begin
-            case (state)
-                IDLE: begin
-                    counter <= 0;
-                    tx <= 1'b1;
-                    donetx <= 1'b0;
-                    if (newd) begin
-                        state <= TRANSFER;
-                        tx <= 1'b0;
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            state <= 0;
+            tx <= 1;
+            tx_busy <= 0;
+        end else begin
+            case(state)
+                0: begin
+                    tx <= 1;
+                    tx_busy <= 0;
+                    if (tx_start) begin
+                        shift_reg <= {1'b1, tx_data, 1'b0}; // stop, data, start
+                        bit_index <= 0;
+                        tx_busy <= 1;
+                        state <= 1;
                     end
-                    else
-                        state <= IDLE;
                 end
-                TRANSFER: begin
-                    tx <= tx_data[counter];
-                    counter <= counter + 1;
-                    if (counter == 4'h8) begin
-                        counter <= 0;
-                        tx <= 1'b1;
-                        donetx <= 1'b1;
-                        state <= IDLE;
+                1: begin
+                    if (tick) begin
+                        tx <= shift_reg[bit_index];
+                        bit_index <= bit_index + 1;
+                        if (bit_index == 9)
+                            state <= 2;
                     end
-                    else
-                        state <= TRANSFER;
                 end
-                default: state <= IDLE;
+                2: begin
+                    if (tick) begin
+                        tx <= 1;
+                        tx_busy <= 0;
+                        state <= 0;
+                    end
+                end
             endcase
         end
     end
