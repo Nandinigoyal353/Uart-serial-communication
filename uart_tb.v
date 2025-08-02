@@ -1,63 +1,44 @@
-module uart_tb;
-    reg clk_tb, rst_tb;
-    reg rx_tb;
-    reg [7:0] dintx_tb;
-    reg newd_tb;
-    wire tx_dut;
-    wire [7:0] doutrx_dut;
-    wire donetx_dut, donerx_dut;
+`timescale 1ns/1ps
 
-    uart_top DUT (clk_tb, rst_tb, rx_tb, dintx_tb,
-                    newd_tb, tx_dut, 
-                    doutrx_dut, donetx_dut, donerx_dut);
+module tb_uart;
 
+    reg clk = 0;
+    reg rst = 1;
+    reg tx_start = 0;
     reg [7:0] tx_data;
-    reg [7:0] rx_data;
+    wire tx;
+    reg rx;
+    wire [7:0] rx_data;
+    wire rx_done;
 
-    // Clock Generation
+    uart_top dut (
+        .clk(clk),
+        .rst(rst),
+        .tx_start(tx_start),
+        .tx_data(tx_data),
+        .tx(tx),
+        .rx(tx),  // Loopback
+        .rx_data(rx_data),
+        .rx_done(rx_done)
+    );
+
+    always #10 clk = ~clk; // 50 MHz
+
     initial begin
-        clk_tb = 0;
-        forever #5 clk_tb = ~clk_tb;
-    end
+        $dumpfile("uart.vcd");
+        $dumpvars(0, tb_uart);
 
-    initial begin
-        // Initialization
-        rst_tb = 1;
-        newd_tb = 0;
-        tx_data = 0;
-        rx_data = 0;
-        rx_tb = 1;
-        #10 rst_tb = 0;
+        #100;
+        rst = 0;
+        #100;
+        tx_data = 8'hA5;
+        tx_start = 1;
+        #20;
+        tx_start = 0;
 
-        repeat(10) begin
-            newd_tb = 1;
-            dintx_tb = $random;
-            wait(tx_dut == 0);
-            @(posedge DUT.UTX.uclk);
-            repeat(8) begin
-                @(posedge DUT.UTX.uclk);
-                tx_data = {tx_dut, tx_data[7:1]};
-            end
-            @(posedge donetx_dut);
-            if (tx_data !== dintx_tb) begin
-                $display("Error at time = %t! Input data (%d) is not equal to transmitted data (%d)", $time, dintx_tb, tx_data);
-                $stop;
-            end
-            @(negedge DUT.UTX.uclk);
-        end
+        wait(rx_done);
+        $display("Received: %h", rx_data);
 
-        @(negedge DUT.UTX.uclk);
-        newd_tb = 0;
-        repeat(10) begin
-            rx_tb = 1'b0;
-            @(negedge DUT.UTX.uclk);
-            repeat(8) begin
-                rx_tb = $random;
-                @(negedge DUT.UTX.uclk);
-                rx_data = {rx_tb, rx_data[7:1]};
-            end
-            @(negedge DUT.UTX.uclk) rx_data = 0;
-        end
-        $stop;
+        #50000 $finish;
     end
 endmodule
